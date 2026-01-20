@@ -12,8 +12,8 @@ public class RealityPostProcessing : MonoBehaviour
     [Header("Effect Intensities")]
     [SerializeField] private float maxChromaticAberration = 0.5f;
     [SerializeField] private float maxVignette = 0.4f;
-    [SerializeField] private float normalBloom = 1f;
-    [SerializeField] private float maxBloom = 3f;
+    [SerializeField] private float normalBloom = 0.3f;
+    [SerializeField] private float maxBloom = 1.5f;
     
     [Header("Transition")]
     [SerializeField] private float transitionSpeed = 5f;

@@ -2,6 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Isometric camera that follows the player smoothly.
+/// Fixed angle, good visibility for gameplay.
 /// </summary>
 public class CameraFollow : MonoBehaviour
 {
@@ -9,12 +10,12 @@ public class CameraFollow : MonoBehaviour
     [SerializeField] private Transform target;
     
     [Header("Camera Settings")]
-    [SerializeField] private Vector3 offset = new Vector3(0f, 10f, -10f);
+    [SerializeField] private Vector3 offset = new Vector3(0f, 8f, -8f);
     [SerializeField] private float smoothSpeed = 5f;
     
     [Header("Isometric Angle")]
-    [SerializeField] private float pitch = 45f;
-    [SerializeField] private float yaw = 45f;
+    [SerializeField] private float pitch = 40f;
+    [SerializeField] private float yaw = 0f;
     
     void Start()
     {
@@ -37,7 +38,7 @@ public class CameraFollow : MonoBehaviour
         if (target == null) return;
         
         /* Calculate desired position */
-        Vector3 desiredPosition = target.position + Quaternion.Euler(0, yaw, 0) * offset;
+        Vector3 desiredPosition = target.position + offset;
         
         /* Smoothly move camera */
         Vector3 smoothedPosition = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed * Time.deltaTime);

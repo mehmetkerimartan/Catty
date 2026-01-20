@@ -23,17 +23,17 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private LayerMask groundMask;
     
     private CharacterController controller;
+    private Animator animator;
     private Vector3 velocity;
     private Vector3 horizontalMomentum;
     private bool isGrounded;
     private bool wasGrounded;
     
-    /* Isometric camera angle (45 degrees rotated) */
-    private readonly float isoAngle = 45f;
     
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        animator = GetComponentInChildren<Animator>();
         
         if (groundCheck == null)
         {
@@ -51,6 +51,7 @@ public class PlayerController : MonoBehaviour
         HandleMovement();
         HandleJump();
         ApplyGravity();
+        UpdateAnimator();
     }
     
     private void HandleGroundCheck()
@@ -70,8 +71,20 @@ public class PlayerController : MonoBehaviour
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
         
+        /* Get camera forward and right directions */
+        Transform cam = Camera.main.transform;
+        Vector3 camForward = cam.forward;
+        Vector3 camRight = cam.right;
+        
+        /* Flatten to horizontal plane */
+        camForward.y = 0f;
+        camRight.y = 0f;
+        camForward.Normalize();
+        camRight.Normalize();
+        
+        /* Calculate movement direction relative to camera */
         Vector3 inputDir = new Vector3(horizontal, 0f, vertical).normalized;
-        Vector3 isoDir = Quaternion.Euler(0, isoAngle, 0) * inputDir;
+        Vector3 moveDir = (camForward * vertical + camRight * horizontal).normalized;
         
         /* Determine speed (sprint or walk) */
         bool isSprinting = Input.GetKey(KeyCode.LeftShift);
@@ -80,7 +93,7 @@ public class PlayerController : MonoBehaviour
         /* Always allow rotation */
         if (inputDir.magnitude >= 0.1f)
         {
-            Quaternion targetRotation = Quaternion.LookRotation(isoDir);
+            Quaternion targetRotation = Quaternion.LookRotation(moveDir);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
         }
         
@@ -94,7 +107,7 @@ public class PlayerController : MonoBehaviour
                 if (IceGround.IsOnIce)
                 {
                     /* On ice: accelerate slowly, maintain momentum */
-                    Vector3 targetVelocity = isoDir * currentSpeed;
+                    Vector3 targetVelocity = moveDir * currentSpeed;
                     horizontalMomentum = Vector3.Lerp(horizontalMomentum, targetVelocity, friction * Time.deltaTime * 5f);
                     
                     /* Clamp to max slide speed */
@@ -106,7 +119,7 @@ public class PlayerController : MonoBehaviour
                 else
                 {
                     /* Normal ground: full control */
-                    horizontalMomentum = isoDir * currentSpeed;
+                    horizontalMomentum = moveDir * currentSpeed;
                 }
             }
             else
@@ -128,7 +141,7 @@ public class PlayerController : MonoBehaviour
             if (inputDir.magnitude >= 0.1f)
             {
                 float currentMomentumSpeed = horizontalMomentum.magnitude;
-                Vector3 newDirection = Vector3.Lerp(horizontalMomentum.normalized, isoDir, airControl * Time.deltaTime * 10f);
+                Vector3 newDirection = Vector3.Lerp(horizontalMomentum.normalized, moveDir, airControl * Time.deltaTime * 10f);
                 horizontalMomentum = newDirection.normalized * currentMomentumSpeed;
             }
         }
@@ -164,6 +177,19 @@ public class PlayerController : MonoBehaviour
     {
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
+    }
+    
+    private void UpdateAnimator()
+    {
+        if (animator == null) return;
+        
+        /* Calculate current speed for animator */
+        float speed = horizontalMomentum.magnitude;
+        
+        /* Set animator parameters */
+        animator.SetFloat("Speed", speed);
+        animator.SetBool("IsGrounded", isGrounded);
+        animator.SetBool("IsRunning", Input.GetKey(KeyCode.LeftShift) && speed > 0.1f);
     }
     
     /* Called when player falls off the map */
