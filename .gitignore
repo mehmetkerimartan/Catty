@@ -71,3 +71,11 @@ Thumbs.db
 
 # Plastic SCM
 .plastic/
+
+# 3D Models - Do not track
+*.fbx
+*.obj
+*.blend
+*.blend1
+Assets/models/
+Assets/Models/
