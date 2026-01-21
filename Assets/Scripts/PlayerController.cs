@@ -28,6 +28,7 @@ public class PlayerController : MonoBehaviour
     private Vector3 horizontalMomentum;
     private bool isGrounded;
     private bool wasGrounded;
+    private float idleTimer;
     
     
     void Start()
@@ -169,7 +170,12 @@ public class PlayerController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
         {
             velocity.y = Mathf.Sqrt(jumpForce * -2f * gravity);
-            Debug.Log("Ziplama yapildi!");
+            
+            /* Trigger jump animation */
+            if (animator != null)
+            {
+                animator.SetTrigger("Jump");
+            }
         }
     }
     
@@ -190,6 +196,22 @@ public class PlayerController : MonoBehaviour
         animator.SetFloat("Speed", speed);
         animator.SetBool("IsGrounded", isGrounded);
         animator.SetBool("IsRunning", Input.GetKey(KeyCode.LeftShift) && speed > 0.1f);
+        animator.SetBool("IsJumping", !isGrounded);
+        
+        /* Second idle animation trigger */
+        if (speed < 0.1f && isGrounded)
+        {
+            idleTimer += Time.deltaTime;
+            if (idleTimer > 8f) /* 8 saniye sonra ikinci idle */
+            {
+                animator.SetTrigger("PlayIdle2");
+                idleTimer = 0f;
+            }
+        }
+        else
+        {
+            idleTimer = 0f;
+        }
     }
     
     /* Called when player falls off the map */
