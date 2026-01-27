@@ -9,7 +9,7 @@ public class PixelationEffect : MonoBehaviour
 {
     [Header("Pixelation Settings")]
     [SerializeField] private int pixelHeight = 180; /* Lower = more pixelated */
-    [SerializeField] private bool enabled = true;
+    [SerializeField] private bool isEffectEnabled = true;
     
     private Camera cam;
     private RenderTexture pixelTexture;
@@ -21,7 +21,7 @@ public class PixelationEffect : MonoBehaviour
     
     void OnPreRender()
     {
-        if (!enabled || cam == null) return;
+        if (!isEffectEnabled || cam == null) return;
         
         int width = (int)(pixelHeight * cam.aspect);
         
@@ -37,7 +37,7 @@ public class PixelationEffect : MonoBehaviour
     
     void OnPostRender()
     {
-        if (!enabled || cam == null) return;
+        if (!isEffectEnabled || cam == null) return;
         
         cam.targetTexture = null;
         Graphics.Blit(pixelTexture, null as RenderTexture);

@@ -12,15 +12,39 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float sprintSpeed = 20f;
     [SerializeField] private float rotationSpeed = 20f;
     
+    [Header("Movement Polish")]
+    [SerializeField] private float groundDeceleration = 80f;
+    
     [Header("Jump Settings")]
     [SerializeField] private float jumpForce = 1f;
     [SerializeField] private float gravity = -40f;
-    [SerializeField] private float airControl = 0.3f;
+    [SerializeField] [Range(0f, 1f)] private float airControl = 0.5f;
+    [SerializeField] private float airAcceleration = 8f;
     
     [Header("Ground Check")]
     [SerializeField] private Transform groundCheck;
-    [SerializeField] private float groundDistance = 0.2f;
     [SerializeField] private LayerMask groundMask;
+    
+    [Header("Squash & Stretch")]
+    [SerializeField] private Transform visualGroup;
+    [SerializeField] private float squashStrength = 0.15f;
+    [SerializeField] private float squashSmoothSpeed = 8f;
+
+    [Header("Lean (Visual Polish)")]
+    [SerializeField] private float sideLeanStrength = 15f;
+    [SerializeField] private float forwardLeanStrength = 10f;
+    [SerializeField] private float leanSmoothSpeed = 10f;
+    
+    
+    [Header("Advanced Jump")]
+    [SerializeField] private float coyoteTime = 0.15f;
+    [SerializeField] private float jumpBufferTime = 0.2f;
+    
+    private float coyoteTimeCounter;
+    private float jumpBufferCounter;
+    private bool sprintToggled = false;       /* For controller toggle sprint */
+    private bool isSprinting = false;         /* Current sprint state for animator */
+    private bool wasSprintingBeforeJump = false; /* Remember sprint state through jump */
     
     private CharacterController controller;
     private Animator animator;
@@ -29,6 +53,10 @@ public class PlayerController : MonoBehaviour
     private bool isGrounded;
     private bool wasGrounded;
     private float idleTimer;
+    private float targetTurnDirection;
+    private float smoothTurnDirection;
+    private Vector3 targetScale = Vector3.one;
+    private Vector3 currentScale = Vector3.one;
     
     
     void Start()
@@ -44,15 +72,28 @@ public class PlayerController : MonoBehaviour
             gc.transform.localPosition = new Vector3(0, -0.5f, 0);
             groundCheck = gc.transform;
         }
+        
+        if (visualGroup == null)
+        {
+            /* If not assigned, assume it's the first child (rig/model) */
+            if (transform.childCount > 0) visualGroup = transform.GetChild(0);
+        }
     }
     
     void Update()
     {
         HandleGroundCheck();
-        HandleMovement();
-        HandleJump();
-        ApplyGravity();
+        HandleMovement(); // This now only calculates momentum
+        HandleJump();     // This handles jump logic
+        ApplyGravity();   // This handles gravity logic
+        
+        /* COMBINED MOVE: Single call to prevent jitter and stuttering */
+        Vector3 finalMove = horizontalMomentum + (Vector3.up * velocity.y);
+        controller.Move(finalMove * Time.deltaTime);
+
         UpdateAnimator();
+        HandleSquashStretch();
+        HandleLean();
     }
     
     private void HandleGroundCheck()
@@ -65,10 +106,25 @@ public class PlayerController : MonoBehaviour
         {
             velocity.y = -2f;
         }
+        
+        /* Detect landing for squash effect */
+        if (isGrounded && !wasGrounded)
+        {
+            /* Squash on hit ground: widen XZ, shrink Y */
+            currentScale = new Vector3(1f + squashStrength, 1f - squashStrength, 1f + squashStrength);
+            
+            /* Restore sprint state if we were sprinting before jump */
+            if (wasSprintingBeforeJump)
+            {
+                sprintToggled = true;
+                wasSprintingBeforeJump = false;
+            }
+        }
     }
     
     private void HandleMovement()
     {
+        /* Use GetAxisRaw for instant response - still works with controllers */
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
         
@@ -87,15 +143,38 @@ public class PlayerController : MonoBehaviour
         Vector3 inputDir = new Vector3(horizontal, 0f, vertical).normalized;
         Vector3 moveDir = (camForward * vertical + camRight * horizontal).normalized;
         
-        /* Determine speed (sprint or walk) */
-        bool isSprinting = Input.GetKey(KeyCode.LeftShift);
+        /* Toggle sprint with LB (controller) - keyboard shift still works as hold */
+        if (Input.GetKeyDown(KeyCode.JoystickButton4)) /* LB pressed */
+        {
+            sprintToggled = !sprintToggled;
+        }
+        
+        /* Reset sprint toggle when player stops moving - ONLY ON GROUND */
+        if (isGrounded && inputDir.magnitude < 0.1f)
+        {
+            sprintToggled = false;
+        }
+        
+        /* Determine speed - Keyboard: hold Shift, Controller: toggle LB */
+        isSprinting = Input.GetKey(KeyCode.LeftShift) || sprintToggled;
         float currentSpeed = isSprinting ? sprintSpeed : walkSpeed;
         
         /* Always allow rotation */
         if (inputDir.magnitude >= 0.1f)
         {
+            /* Calculate target turn direction before rotating */
+            float angle = Vector3.SignedAngle(transform.forward, moveDir, Vector3.up);
+            
+            /* Proportional target for smoother blending. 
+               45 degrees difference = full lean. Adjust this value to change sensitivity. */
+            targetTurnDirection = Mathf.Clamp(angle / 45f, -1f, 1f);
+            
             Quaternion targetRotation = Quaternion.LookRotation(moveDir);
             transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        }
+        else
+        {
+            targetTurnDirection = 0f;
         }
         
         if (isGrounded)
@@ -119,7 +198,7 @@ public class PlayerController : MonoBehaviour
                 }
                 else
                 {
-                    /* Normal ground: full control */
+                    /* Instant acceleration - immediate response */
                     horizontalMomentum = moveDir * currentSpeed;
                 }
             }
@@ -132,19 +211,45 @@ public class PlayerController : MonoBehaviour
                 }
                 else
                 {
-                    horizontalMomentum = Vector3.zero;
+                    /* ZELDA-STYLE: Smooth deceleration when stopping */
+                    horizontalMomentum = Vector3.MoveTowards(
+                        horizontalMomentum,
+                        Vector3.zero,
+                        groundDeceleration * Time.deltaTime
+                    );
                 }
             }
         }
         else
         {
-            /* In air: can steer but keep same speed */
+            /* In air: ALWAYS preserve momentum, only allow steering */
+            float currentAirSpeed = horizontalMomentum.magnitude;
+            
             if (inputDir.magnitude >= 0.1f)
             {
-                float currentMomentumSpeed = horizontalMomentum.magnitude;
-                Vector3 newDirection = Vector3.Lerp(horizontalMomentum.normalized, moveDir, airControl * Time.deltaTime * 10f);
-                horizontalMomentum = newDirection.normalized * currentMomentumSpeed;
+                if (currentAirSpeed > 0.1f)
+                {
+                    /* Has momentum: only allow steering, preserve speed */
+                    Vector3 newDirection = Vector3.Lerp(
+                        horizontalMomentum.normalized, 
+                        moveDir, 
+                        airControl * Time.deltaTime * 8f
+                    );
+                    horizontalMomentum = newDirection.normalized * currentAirSpeed;
+                }
+                else
+                {
+                    /* No momentum (jumped from standstill): allow building up air speed */
+                    float maxAirSpeed = currentSpeed * airControl;
+                    Vector3 targetAirVelocity = moveDir * maxAirSpeed;
+                    horizontalMomentum = Vector3.MoveTowards(
+                        horizontalMomentum, 
+                        targetAirVelocity, 
+                        airAcceleration * Time.deltaTime
+                    );
+                }
             }
+            /* No input in air: maintain momentum completely (no air resistance) */
         }
         
         /* Apply wind force */
@@ -160,29 +265,58 @@ public class PlayerController : MonoBehaviour
             
             horizontalMomentum += windForce * Time.deltaTime;
         }
-        
-        controller.Move(horizontalMomentum * Time.deltaTime);
     }
     
     private void HandleJump()
     {
-        /* Use KeyCode.Space directly for reliability */
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        /* Coyote Time Management: allows jumping shortly after leaving ground */
+        if (isGrounded)
         {
+            coyoteTimeCounter = coyoteTime;
+        }
+        else
+        {
+            coyoteTimeCounter -= Time.deltaTime;
+        }
+
+        /* Jump Buffer Management: remembers jump button press shortly before landing */
+        /* Jump input: Keyboard Space OR Controller A button */
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
+        {
+            jumpBufferCounter = jumpBufferTime;
+        }
+        else
+        {
+            jumpBufferCounter -= Time.deltaTime;
+        }
+
+        /* Execute Jump if both conditions are met */
+        if (jumpBufferCounter > 0f && coyoteTimeCounter > 0f)
+        {
+            /* Save toggle state before jump (controller only) */
+            wasSprintingBeforeJump = sprintToggled;
+            
+            /* Calculate jump velocity */
             velocity.y = Mathf.Sqrt(jumpForce * -2f * gravity);
+            
+            /* Reset counters to prevent double-jumping or stale buffers */
+            jumpBufferCounter = 0f;
+            coyoteTimeCounter = 0f;
             
             /* Trigger jump animation */
             if (animator != null)
             {
                 animator.SetTrigger("Jump");
             }
+            
+            /* Stretch on jump: thin XZ, grow Y */
+            currentScale = new Vector3(1f - squashStrength, 1f + squashStrength * 1.5f, 1f - squashStrength);
         }
     }
     
     private void ApplyGravity()
     {
         velocity.y += gravity * Time.deltaTime;
-        controller.Move(velocity * Time.deltaTime);
     }
     
     private void UpdateAnimator()
@@ -192,11 +326,34 @@ public class PlayerController : MonoBehaviour
         /* Calculate current speed for animator */
         float speed = horizontalMomentum.magnitude;
         
+        /* Smooth the turn direction for better animation blending */
+        smoothTurnDirection = Mathf.Lerp(smoothTurnDirection, targetTurnDirection, Time.deltaTime * 5f);
+        
         /* Set animator parameters */
         animator.SetFloat("Speed", speed);
+        animator.SetFloat("TurnDirection", smoothTurnDirection);
+        
         animator.SetBool("IsGrounded", isGrounded);
-        animator.SetBool("IsRunning", Input.GetKey(KeyCode.LeftShift) && speed > 0.1f);
-        animator.SetBool("IsJumping", !isGrounded);
+        
+        /* IsRunning based on INPUT, not actual speed - this prevents animation lag after landing */
+        float inputMag = new Vector3(Input.GetAxisRaw("Horizontal"), 0, Input.GetAxisRaw("Vertical")).magnitude;
+        bool isRunning = isSprinting && inputMag > 0.1f;
+        
+        animator.SetBool("IsRunning", isRunning);
+        
+        /* Sync animation speed with movement speed to prevent foot sliding */
+        /* Walk animation base speed: 12, Run animation base speed: 20 */
+        if (speed > 0.1f)
+        {
+            float baseSpeed = isSprinting ? sprintSpeed : walkSpeed;
+            float targetAnimSpeed = speed / baseSpeed;
+            /* Smooth the animation speed change to prevent micro-stutters */
+            animator.speed = Mathf.Lerp(animator.speed, Mathf.Clamp(targetAnimSpeed, 0.5f, 1.5f), Time.deltaTime * 10f);
+        }
+        else
+        {
+            animator.speed = Mathf.Lerp(animator.speed, 1f, Time.deltaTime * 10f);
+        }
         
         /* Second idle animation trigger */
         if (speed < 0.1f && isGrounded)
@@ -247,5 +404,39 @@ public class PlayerController : MonoBehaviour
                 heart.Collect();
             }
         }
+    }
+    
+    private void HandleSquashStretch()
+    {
+        if (visualGroup == null) return;
+        
+        /* Smoothly return to normal scale */
+        currentScale = Vector3.Lerp(currentScale, Vector3.one, squashSmoothSpeed * Time.deltaTime);
+        visualGroup.localScale = currentScale;
+    }
+    
+    public float GetCurrentSpeed()
+    {
+        return horizontalMomentum.magnitude;
+    }
+
+    private void HandleLean()
+    {
+        if (visualGroup == null) return;
+
+        /* Side Lean: based on turn direction (smoothTurnDirection) */
+        float targetSideLean = -smoothTurnDirection * sideLeanStrength;
+
+        /* Forward Lean: based on sprinting state and speed */
+        float speedPercent = horizontalMomentum.magnitude / sprintSpeed;
+        float targetForwardLean = (isSprinting && speedPercent > 0.5f) ? forwardLeanStrength : 0f;
+
+        /* Apply rotations smoothly */
+        Quaternion targetLeanRotation = Quaternion.Euler(targetForwardLean, 0f, targetSideLean);
+        visualGroup.localRotation = Quaternion.Lerp(
+            visualGroup.localRotation, 
+            targetLeanRotation, 
+            leanSmoothSpeed * Time.deltaTime
+        );
     }
 }

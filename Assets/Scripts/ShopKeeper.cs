@@ -35,7 +35,7 @@ public class ShopKeeper : MonoBehaviour
             player = playerObj.transform;
         }
         
-        hudManager = FindObjectOfType<HUDManager>();
+        hudManager = FindFirstObjectByType<HUDManager>();
         
         if (shopIcon != null)
         {
@@ -109,7 +109,7 @@ public class ShopKeeper : MonoBehaviour
         onShopOpen?.Invoke();
         
         /* Find and show ShopUI */
-        ShopUI shopUI = FindObjectOfType<ShopUI>(true);
+        ShopUI shopUI = FindFirstObjectByType<ShopUI>(FindObjectsInactive.Include);
         if (shopUI != null)
         {
             shopUI.Show();
@@ -126,7 +126,7 @@ public class ShopKeeper : MonoBehaviour
         onShopClose?.Invoke();
         
         /* Find and hide ShopUI */
-        ShopUI shopUI = FindObjectOfType<ShopUI>(true);
+        ShopUI shopUI = FindFirstObjectByType<ShopUI>(FindObjectsInactive.Include);
         if (shopUI != null)
         {
             shopUI.Hide();

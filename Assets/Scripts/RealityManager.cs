@@ -72,14 +72,14 @@ public class RealityManager : MonoBehaviour
     
     private void HandleRealityTear()
     {
-        /* Release check */
-        if (Input.GetMouseButtonUp(1))
+        /* Release check - mouse or controller RB */
+        if (Input.GetMouseButtonUp(1) || Input.GetKeyUp(KeyCode.JoystickButton5))
         {
             needsRelease = false;
         }
 
-        /* Check if we can start or continue a charge */
-        bool inputActive = Input.GetMouseButton(1);
+        /* Check if we can start or continue a charge - mouse right-click OR controller RB */
+        bool inputActive = Input.GetMouseButton(1) || Input.GetKey(KeyCode.JoystickButton5);
         bool canStart = currentCharges > 0 && !needsRelease;
 
         if (inputActive && canStart)
@@ -166,7 +166,7 @@ public class RealityManager : MonoBehaviour
     private void UpdateDualWorldObjects()
     {
         /* Update all DualWorldObject components */
-        DualWorldObject[] dualObjects = FindObjectsOfType<DualWorldObject>();
+        DualWorldObject[] dualObjects = FindObjectsByType<DualWorldObject>(FindObjectsSortMode.None);
         
         foreach (DualWorldObject obj in dualObjects)
         {
