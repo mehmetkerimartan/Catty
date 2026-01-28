@@ -321,7 +321,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraFollow
   target: {fileID: 0}
-  mode: 1
+  mode: 2
   smoothSpeed: 5
   strayOffset: {x: 0, y: 1.5, z: -8}
   isoOffset: {x: 0, y: 8, z: -8}
@@ -332,6 +332,10 @@ MonoBehaviour:
   baseFOV: 60
   maxFOV: 75
   fovSmoothSpeed: 2
+  enableHeadBob: 1
+  bobSpeed: 10
+  bobAmount: 0.1
+  sprintBobMultiplier: 1.5
 --- !u!114 &330585549
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10194,9 +10198,14 @@ MonoBehaviour:
   visualGroup: {fileID: -2484921068739079471, guid: 37eda927e71686240baa217806c273a7, type: 3}
   squashStrength: 0.15
   squashSmoothSpeed: 8
+  startRunStretch: 0.25
   sideLeanStrength: 15
   forwardLeanStrength: 10
   leanSmoothSpeed: 10
+  minImpactVelocity: 5
+  maxImpactVelocity: 20
+  landingSquashMultiplier: 2
+  landingDustPrefab: {fileID: 0}
   coyoteTime: 0.15
   jumpBufferTime: 0.2
 --- !u!143 &868929213

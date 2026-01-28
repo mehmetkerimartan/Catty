@@ -29,8 +29,16 @@ public class CameraFollow : MonoBehaviour
     [SerializeField] private float baseFOV = 70f;
     [SerializeField] private float maxFOV = 85f;
     [SerializeField] private float fovSmoothSpeed = 4f;
+    
+    [Header("Head Bob")]
+    [SerializeField] private bool enableHeadBob = true;
+    [SerializeField] private float bobSpeed = 10f;
+    [SerializeField] private float bobAmount = 0.1f;
+    [SerializeField] private float sprintBobMultiplier = 1.5f;
 
     private Camera cam;
+    private float bobTimer = 0f;
+    private Vector3 baseOffset;
     private PlayerController playerController;
     private float currentYaw;
     private float currentPitch = 30f;
@@ -53,6 +61,7 @@ public class CameraFollow : MonoBehaviour
             playerController = target.GetComponent<PlayerController>();
             lastPlayerPosition = target.position;
             currentYaw = target.eulerAngles.y;
+            baseOffset = strayOffset;
             
             /* Trap cursor for Stray feel */
             if (mode == CameraMode.StrayStyle)
@@ -129,9 +138,28 @@ public class CameraFollow : MonoBehaviour
             }
         }
 
+        /* Head Bob calculation */
+        Vector3 currentOffset = strayOffset;
+        if (enableHeadBob && isMoving && playerController != null)
+        {
+            float speed = playerController.GetCurrentSpeed();
+            float speedRatio = Mathf.InverseLerp(12f, 20f, speed);
+            float currentBobSpeed = bobSpeed * (1f + speedRatio * (sprintBobMultiplier - 1f));
+            float currentBobAmount = bobAmount * (1f + speedRatio * 0.5f);
+            
+            bobTimer += Time.deltaTime * currentBobSpeed;
+            float bobOffset = Mathf.Sin(bobTimer) * currentBobAmount;
+            currentOffset = baseOffset + Vector3.up * bobOffset;
+        }
+        else
+        {
+            /* Reset bob timer when not moving */
+            bobTimer = 0f;
+        }
+
         /* Calculate position */
         Quaternion rotation = Quaternion.Euler(currentPitch, currentYaw, 0f);
-        Vector3 desiredPosition = target.position + (rotation * strayOffset);
+        Vector3 desiredPosition = target.position + (rotation * currentOffset);
 
         /* Collision Check (Subtle) */
         if (Physics.SphereCast(target.position + Vector3.up, 0.2f, (desiredPosition - target.position).normalized, out RaycastHit hit, strayOffset.magnitude))

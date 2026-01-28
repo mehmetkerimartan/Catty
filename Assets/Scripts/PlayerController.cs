@@ -29,11 +29,18 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private Transform visualGroup;
     [SerializeField] private float squashStrength = 0.15f;
     [SerializeField] private float squashSmoothSpeed = 8f;
+    [SerializeField] private float startRunStretch = 0.25f;
 
     [Header("Lean (Visual Polish)")]
     [SerializeField] private float sideLeanStrength = 15f;
     [SerializeField] private float forwardLeanStrength = 10f;
     [SerializeField] private float leanSmoothSpeed = 10f;
+    
+    [Header("Landing Impact")]
+    [SerializeField] private float minImpactVelocity = 5f;
+    [SerializeField] private float maxImpactVelocity = 20f;
+    [SerializeField] private float landingSquashMultiplier = 2f;
+    [SerializeField] private ParticleSystem landingDustPrefab;
     
     
     [Header("Advanced Jump")]
@@ -57,6 +64,8 @@ public class PlayerController : MonoBehaviour
     private float smoothTurnDirection;
     private Vector3 targetScale = Vector3.one;
     private Vector3 currentScale = Vector3.one;
+    private bool wasMoving = false;
+    private float runStartTimer = 0f;
     
     
     void Start()
@@ -83,11 +92,11 @@ public class PlayerController : MonoBehaviour
     void Update()
     {
         HandleGroundCheck();
-        HandleMovement(); // This now only calculates momentum
-        HandleJump();     // This handles jump logic
-        ApplyGravity();   // This handles gravity logic
+        HandleMovement();
+        HandleJump();
+        ApplyGravity();
         
-        /* COMBINED MOVE: Single call to prevent jitter and stuttering */
+        /* SINGLE MOVE CALL: All movement combined to prevent jitter */
         Vector3 finalMove = horizontalMomentum + (Vector3.up * velocity.y);
         controller.Move(finalMove * Time.deltaTime);
 
@@ -110,8 +119,7 @@ public class PlayerController : MonoBehaviour
         /* Detect landing for squash effect */
         if (isGrounded && !wasGrounded)
         {
-            /* Squash on hit ground: widen XZ, shrink Y */
-            currentScale = new Vector3(1f + squashStrength, 1f - squashStrength, 1f + squashStrength);
+            HandleLandingImpact();
             
             /* Restore sprint state if we were sprinting before jump */
             if (wasSprintingBeforeJump)
@@ -119,6 +127,40 @@ public class PlayerController : MonoBehaviour
                 sprintToggled = true;
                 wasSprintingBeforeJump = false;
             }
+        }
+    }
+    
+    private void HandleLandingImpact()
+    {
+        /* Calculate impact intensity based on fall velocity */
+        float impactVelocity = Mathf.Abs(velocity.y);
+        float impactRatio = Mathf.InverseLerp(minImpactVelocity, maxImpactVelocity, impactVelocity);
+        
+        if (impactRatio > 0.1f)
+        {
+            /* Stronger squash for harder landings */
+            float actualSquash = squashStrength * (1f + impactRatio * landingSquashMultiplier);
+            currentScale = new Vector3(1f + actualSquash, 1f - actualSquash, 1f + actualSquash);
+            
+            /* Camera shake */
+            if (CameraShake.Instance != null)
+            {
+                CameraShake.Instance.Shake(impactRatio * 0.1f, 0.15f);
+            }
+            
+            /* Landing dust particles */
+            if (landingDustPrefab != null)
+            {
+                ParticleSystem dust = Instantiate(landingDustPrefab, transform.position, Quaternion.identity);
+                var main = dust.main;
+                main.startSizeMultiplier = 0.5f + impactRatio;
+                Destroy(dust.gameObject, 2f);
+            }
+        }
+        else
+        {
+            /* Normal squash for small drops */
+            currentScale = new Vector3(1f + squashStrength, 1f - squashStrength, 1f + squashStrength);
         }
     }
     
@@ -159,8 +201,17 @@ public class PlayerController : MonoBehaviour
         isSprinting = Input.GetKey(KeyCode.LeftShift) || sprintToggled;
         float currentSpeed = isSprinting ? sprintSpeed : walkSpeed;
         
+        /* Detect movement start for stretch effect */
+        bool isMoving = inputDir.magnitude >= 0.1f;
+        if (isMoving && !wasMoving && isGrounded)
+        {
+            /* Start running stretch: thin XZ, stretch Y (anticipation) */
+            currentScale = new Vector3(1f - startRunStretch * 0.5f, 1f + startRunStretch, 1f - startRunStretch * 0.5f);
+        }
+        wasMoving = isMoving;
+        
         /* Always allow rotation */
-        if (inputDir.magnitude >= 0.1f)
+        if (isMoving)
         {
             /* Calculate target turn direction before rotating */
             float angle = Vector3.SignedAngle(transform.forward, moveDir, Vector3.up);
