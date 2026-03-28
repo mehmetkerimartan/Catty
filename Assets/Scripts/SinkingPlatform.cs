@@ -29,13 +29,18 @@ public class SinkingPlatform : MonoBehaviour
     private Renderer rend;
     private Color originalColor;
     
+    /* Optimization: Cache material instance to prevent leak */
+    private Material materialInstance;
+    
     void Awake()
     {
         originalPosition = transform.position;
         rend = GetComponent<Renderer>();
         if (rend != null)
         {
-            originalColor = rend.material.color;
+            /* Cache material instance once - prevents memory leak */
+            materialInstance = rend.material;
+            originalColor = materialInstance.color;
         }
     }
     
@@ -55,11 +60,11 @@ public class SinkingPlatform : MonoBehaviour
                 float shake = Mathf.Sin(Time.time * shakeFrequency) * shakeIntensity;
                 transform.position = originalPosition + new Vector3(shake, 0, shake);
                 
-                /* Visual warning */
-                if (rend != null)
+                /* Visual warning - using cached material */
+                if (materialInstance != null)
                 {
                     float flash = Mathf.PingPong(Time.time * 5f, 1f);
-                    rend.material.color = Color.Lerp(originalColor, Color.red, flash * 0.5f);
+                    materialInstance.color = Color.Lerp(originalColor, Color.red, flash * 0.5f);
                 }
             }
             
@@ -110,9 +115,10 @@ public class SinkingPlatform : MonoBehaviour
         hasFallen = false;
         playerOnPlatform = false;
         
-        if (rend != null)
+        /* Reset material color - using cached instance */
+        if (materialInstance != null)
         {
-            rend.material.color = originalColor;
+            materialInstance.color = originalColor;
         }
         
         Debug.Log("Platform sifirlandi!");
@@ -137,11 +143,21 @@ public class SinkingPlatform : MonoBehaviour
             if (!isSinking && !hasFallen)
             {
                 transform.position = originalPosition;
-                if (rend != null)
+                /* Reset color - using cached material */
+                if (materialInstance != null)
                 {
-                    rend.material.color = originalColor;
+                    materialInstance.color = originalColor;
                 }
             }
+        }
+    }
+    
+    /* Optimization: Clean up material instance to prevent memory leak */
+    void OnDestroy()
+    {
+        if (materialInstance != null)
+        {
+            Destroy(materialInstance);
         }
     }
     

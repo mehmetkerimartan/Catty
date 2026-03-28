@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
 /// Manages the "Reality Tear" mechanic with dual-world visuals.
@@ -31,6 +32,9 @@ public class RealityManager : MonoBehaviour
     private bool chargeUsed = false;  /* Track if current charge was spent */
     private bool needsRelease = false; /* Force release before next use */
     
+    /* Optimization: Cache DualWorldObjects instead of FindObjectsByType every frame */
+    private List<DualWorldObject> cachedDualObjects = new List<DualWorldObject>();
+    
     public int CurrentCharges => currentCharges;
     public int MaxCharges => maxCharges;
     public float ChargeTimerNormalized => currentChargeTimer / chargeDuration;
@@ -55,6 +59,11 @@ public class RealityManager : MonoBehaviour
         currentChargeTimer = chargeDuration;
         SetTimeScale(1f);
         CreateRadarVisual();
+        
+        /* Optimization: Initial scan for DualWorldObjects */
+        DualWorldObject[] initialObjects = FindObjectsByType<DualWorldObject>(FindObjectsSortMode.None);
+        cachedDualObjects.AddRange(initialObjects);
+        Debug.Log($"RealityManager: {cachedDualObjects.Count} DualWorldObject bulundu ve cache'lendi.");
     }
     
     void Update()
@@ -78,8 +87,8 @@ public class RealityManager : MonoBehaviour
             needsRelease = false;
         }
 
-        /* Check if we can start or continue a charge - mouse right-click OR controller RB */
-        bool inputActive = Input.GetMouseButton(1) || Input.GetKey(KeyCode.JoystickButton5);
+        /* Check if we can start or continue a charge - mouse right-click OR controller RB OR MObile Tear */
+        bool inputActive = Input.GetMouseButton(1) || Input.GetKey(KeyCode.JoystickButton5) || MobileInput.TearHeld;
         bool canStart = currentCharges > 0 && !needsRelease;
 
         if (inputActive && canStart)
@@ -165,11 +174,11 @@ public class RealityManager : MonoBehaviour
     
     private void UpdateDualWorldObjects()
     {
-        /* Update all DualWorldObject components */
-        DualWorldObject[] dualObjects = FindObjectsByType<DualWorldObject>(FindObjectsSortMode.None);
-        
-        foreach (DualWorldObject obj in dualObjects)
+        /* Optimization: Use cached list instead of FindObjectsByType every frame */
+        foreach (DualWorldObject obj in cachedDualObjects)
         {
+            if (obj == null) continue; /* Skip if destroyed */
+            
             /* Check distance to object's center */
             float distance = Vector3.Distance(transform.position, obj.transform.position);
             bool inRadius = currentRadius > 0 && distance <= currentRadius;
@@ -178,6 +187,25 @@ public class RealityManager : MonoBehaviour
             /* Debug - uncomment to see what's happening */
             /* Debug.Log(obj.name + " mesafe: " + distance + " radius: " + currentRadius + " inRadius: " + inRadius); */
         }
+    }
+    
+    /// <summary>
+    /// Register a DualWorldObject to the cache (called by DualWorldObject.Start)
+    /// </summary>
+    public void RegisterDualObject(DualWorldObject obj)
+    {
+        if (obj != null && !cachedDualObjects.Contains(obj))
+        {
+            cachedDualObjects.Add(obj);
+        }
+    }
+    
+    /// <summary>
+    /// Unregister a DualWorldObject from the cache (called by DualWorldObject.OnDestroy)
+    /// </summary>
+    public void UnregisterDualObject(DualWorldObject obj)
+    {
+        cachedDualObjects.Remove(obj);
     }
     
     void OnDestroy()

@@ -53,6 +53,21 @@ public class DualWorldObject : MonoBehaviour
             /* Script mode: Start in Heaven */
             SetHellMode(false);
         }
+        
+        /* Optimization: Register with RealityManager cache */
+        if (RealityManager.Instance != null)
+        {
+            RealityManager.Instance.RegisterDualObject(this);
+        }
+    }
+    
+    /* Optimization: Unregister on destroy to keep cache clean */
+    void OnDestroy()
+    {
+        if (RealityManager.Instance != null)
+        {
+            RealityManager.Instance.UnregisterDualObject(this);
+        }
     }
     
     private void EnableShaderMode()

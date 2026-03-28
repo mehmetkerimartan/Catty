@@ -1,10 +1,12 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 /// <summary>
 /// Wind zone that pushes the player in a direction.
 /// Supports both grounded and airborne effects.
+/// Supports multiple overlapping zones with stack system.
 /// </summary>
-public class WindZone : MonoBehaviour
+public class CustomWindZone : MonoBehaviour
 {
     [Header("Wind Settings")]
     [SerializeField] private Vector3 windDirection = Vector3.right;
@@ -16,20 +18,29 @@ public class WindZone : MonoBehaviour
     [SerializeField] private ParticleSystem windParticles;
     [SerializeField] private bool showGizmoArrow = true;
     
-    private static WindZone currentWindZone;
+    /* Optimization: Stack system for multiple overlapping wind zones */
+    private static Stack<CustomWindZone> windZoneStack = new Stack<CustomWindZone>();
     
     public static Vector3 CurrentWindForce
     {
         get
         {
-            if (currentWindZone == null) return Vector3.zero;
-            return currentWindZone.windDirection.normalized * currentWindZone.windForce;
+            if (windZoneStack.Count == 0) return Vector3.zero;
+            
+            /* Combine all wind zones in stack */
+            Vector3 combinedWind = Vector3.zero;
+            foreach (var zone in windZoneStack)
+            {
+                combinedWind += zone.windDirection.normalized * zone.windForce;
+            }
+            return combinedWind;
         }
     }
     
-    public static float AirborneMultiplier => currentWindZone != null ? currentWindZone.airborneMultiplier : 1f;
-    public static bool AffectsAir => currentWindZone != null && currentWindZone.affectsAirborne;
-    public static bool IsInWind => currentWindZone != null;
+    public static float AirborneMultiplier => Current != null ? Current.airborneMultiplier : 1f;
+    public static bool AffectsAir => Current != null && Current.affectsAirborne;
+    public static bool IsInWind => windZoneStack.Count > 0;
+    private static CustomWindZone Current => windZoneStack.Count > 0 ? windZoneStack.Peek() : null;
     
     void Start()
     {
@@ -44,23 +55,41 @@ public class WindZone : MonoBehaviour
     {
         if (other.CompareTag("Player"))
         {
-            currentWindZone = this;
+            windZoneStack.Push(this);
             
             if (windParticles != null && !windParticles.isPlaying)
             {
                 windParticles.Play();
             }
             
-            Debug.Log("Ruzgar alanina girildi! Yon: " + windDirection + " Guc: " + windForce);
+            Debug.Log("Ruzgar alanina girildi! Yon: " + windDirection + " Guc: " + windForce + " (Stack: " + windZoneStack.Count + ")");
         }
     }
     
     void OnTriggerExit(Collider other)
     {
-        if (other.CompareTag("Player") && currentWindZone == this)
+        if (other.CompareTag("Player"))
         {
-            currentWindZone = null;
-            Debug.Log("Ruzgar alanindan cikildi.");
+            /* Remove this zone from stack if it's on top */
+            if (windZoneStack.Count > 0 && windZoneStack.Peek() == this)
+            {
+                windZoneStack.Pop();
+                Debug.Log("Ruzgar alanindan cikildi. (Stack: " + windZoneStack.Count + ")");
+            }
+            else
+            {
+                /* Edge case: remove from middle of stack */
+                var tempStack = new Stack<CustomWindZone>();
+                while (windZoneStack.Count > 0)
+                {
+                    var zone = windZoneStack.Pop();
+                    if (zone != this) tempStack.Push(zone);
+                }
+                while (tempStack.Count > 0)
+                {
+                    windZoneStack.Push(tempStack.Pop());
+                }
+            }
         }
     }
     

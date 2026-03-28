@@ -27,10 +27,14 @@ public class SecretWall : MonoBehaviour
     
     void Start()
     {
-        GameObject playerObj = GameObject.FindGameObjectWithTag("Player");
-        if (playerObj != null)
+        /* Optimization: Use static PlayerController reference instead of FindGameObjectWithTag */
+        if (PlayerController.Instance != null)
         {
-            player = playerObj.transform;
+            player = PlayerController.Instance.transform;
+        }
+        else
+        {
+            Debug.LogWarning("SecretWall: PlayerController.Instance bulunamadi!");
         }
         
         /* Hide the passage initially */

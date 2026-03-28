@@ -39,9 +39,10 @@ public class CoinPickup : MonoBehaviour
         /* Rotate the coin */
         transform.Rotate(Vector3.up, rotationSpeed * Time.deltaTime);
         
-        /* Bob up and down */
-        float newY = startPosition.y + Mathf.Sin(Time.time * bobSpeed) * bobHeight;
-        transform.position = new Vector3(startPosition.x, newY, startPosition.z);
+        /* Optimization: Bob up and down without creating new Vector3 */
+        Vector3 pos = transform.position;
+        pos.y = startPosition.y + Mathf.Sin(Time.time * bobSpeed) * bobHeight;
+        transform.position = pos;
     }
     
     void OnTriggerEnter(Collider other)

@@ -7,6 +7,9 @@ using UnityEngine;
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
+    /* Optimization: Static instance for easy access from other scripts */
+    public static PlayerController Instance { get; private set; }
+    
     [Header("Movement Settings")]
     [SerializeField] private float walkSpeed = 12f;
     [SerializeField] private float sprintSpeed = 20f;
@@ -14,6 +17,12 @@ public class PlayerController : MonoBehaviour
     
     [Header("Movement Polish")]
     [SerializeField] private float groundDeceleration = 80f;
+    
+    [Header("Snake-like Curving")]
+    [Tooltip("Ground turn speed. Lower = more curvy (5=snake, 8=cat, 20=sharp)")]
+    [SerializeField] private float groundTurnSpeed = 8f;
+    [Tooltip("Sprint turn multiplier. Lower = wider curves when sprinting")]
+    [SerializeField] [Range(0.2f, 1f)] private float sprintTurnMultiplier = 0.5f;
     
     [Header("Jump Settings")]
     [SerializeField] private float jumpForce = 1f;
@@ -31,10 +40,12 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float squashSmoothSpeed = 8f;
     [SerializeField] private float startRunStretch = 0.25f;
 
-    [Header("Lean (Visual Polish)")]
-    [SerializeField] private float sideLeanStrength = 15f;
-    [SerializeField] private float forwardLeanStrength = 10f;
-    [SerializeField] private float leanSmoothSpeed = 10f;
+    [Header("Lean & Body Curve (Stray Style)")]
+    [SerializeField] private float sideLeanStrength = 25f;
+    [Tooltip("Body yaw rotation during turns — creates the curving/snaking look")]
+    [SerializeField] private float bodyYawStrength = 20f;
+    [SerializeField] private float forwardLeanStrength = 15f;
+    [SerializeField] private float leanSmoothSpeed = 8f;
     
     [Header("Landing Impact")]
     [SerializeField] private float minImpactVelocity = 5f;
@@ -62,16 +73,39 @@ public class PlayerController : MonoBehaviour
     private float idleTimer;
     private float targetTurnDirection;
     private float smoothTurnDirection;
+    
+    /* Public accessor for CatSpineBend */
+    public float SmoothTurnDirection => smoothTurnDirection;
+    public float NormalizedSpeed => horizontalMomentum.magnitude / sprintSpeed;
     private Vector3 targetScale = Vector3.one;
     private Vector3 currentScale = Vector3.one;
     private bool wasMoving = false;
-    private float runStartTimer = 0f;
+    
+    /* Optimization: Cache camera reference */
+    private Transform mainCam;
+    
+    /* Optimization: Animator hash IDs for better performance */
+    private static readonly int SpeedHash = Animator.StringToHash("Speed");
+    private static readonly int TurnDirectionHash = Animator.StringToHash("TurnDirection");
+    private static readonly int IsGroundedHash = Animator.StringToHash("IsGrounded");
+    private static readonly int IsRunningHash = Animator.StringToHash("IsRunning");
+    private static readonly int JumpHash = Animator.StringToHash("Jump");
+    private static readonly int PlayIdle2Hash = Animator.StringToHash("PlayIdle2");
     
     
     void Start()
     {
+        Instance = this;
+        
         controller = GetComponent<CharacterController>();
         animator = GetComponentInChildren<Animator>();
+        
+        /* Optimization: Cache main camera reference */
+        mainCam = Camera.main?.transform;
+        if (mainCam == null)
+        {
+            Debug.LogWarning("PlayerController: Ana kamera bulunamadı!");
+        }
         
         if (groundCheck == null)
         {
@@ -166,14 +200,23 @@ public class PlayerController : MonoBehaviour
     
     private void HandleMovement()
     {
+        /* Optimization: Early exit if camera not available */
+        if (mainCam == null) return;
+        
         /* Use GetAxisRaw for instant response - still works with controllers */
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
         
-        /* Get camera forward and right directions */
-        Transform cam = Camera.main.transform;
-        Vector3 camForward = cam.forward;
-        Vector3 camRight = cam.right;
+        /* Mobil Joystick overrides klavye (eğer dokunuluyorsa) */
+        if (MobileInput.Joystick.sqrMagnitude > 0.01f)
+        {
+            horizontal = MobileInput.Joystick.x;
+            vertical = MobileInput.Joystick.y;
+        }
+        
+        /* Get camera forward and right directions - using cached reference */
+        Vector3 camForward = mainCam.forward;
+        Vector3 camRight = mainCam.right;
         
         /* Flatten to horizontal plane */
         camForward.y = 0f;
@@ -197,8 +240,8 @@ public class PlayerController : MonoBehaviour
             sprintToggled = false;
         }
         
-        /* Determine speed - Keyboard: hold Shift, Controller: toggle LB */
-        isSprinting = Input.GetKey(KeyCode.LeftShift) || sprintToggled;
+        /* Determine speed - Keyboard: hold Shift, Controller: toggle LB, Mobile: Dash Held */
+        isSprinting = Input.GetKey(KeyCode.LeftShift) || sprintToggled || MobileInput.DashHeld;
         float currentSpeed = isSprinting ? sprintSpeed : walkSpeed;
         
         /* Detect movement start for stretch effect */
@@ -249,8 +292,21 @@ public class PlayerController : MonoBehaviour
                 }
                 else
                 {
-                    /* Instant acceleration - immediate response */
-                    horizontalMomentum = moveDir * currentSpeed;
+                    /* Snake-like curving: gradually steer momentum toward input direction */
+                    /* Instead of instant direction change, the cat curves into turns */
+                    float turnRate = groundTurnSpeed * (isSprinting ? sprintTurnMultiplier : 1f);
+                    
+                    if (horizontalMomentum.magnitude < 0.5f)
+                    {
+                        /* From standstill: quick start, no curve needed */
+                        horizontalMomentum = moveDir * currentSpeed;
+                    }
+                    else
+                    {
+                        /* Moving: curve toward new direction */
+                        Vector3 targetVelocity = moveDir * currentSpeed;
+                        horizontalMomentum = Vector3.Lerp(horizontalMomentum, targetVelocity, turnRate * Time.deltaTime);
+                    }
                 }
             }
             else
@@ -304,14 +360,14 @@ public class PlayerController : MonoBehaviour
         }
         
         /* Apply wind force */
-        if (WindZone.IsInWind)
+        if (CustomWindZone.IsInWind)
         {
-            Vector3 windForce = WindZone.CurrentWindForce;
+            Vector3 windForce = CustomWindZone.CurrentWindForce;
             
             /* Stronger effect in air */
-            if (!isGrounded && WindZone.AffectsAir)
+            if (!isGrounded && CustomWindZone.AffectsAir)
             {
-                windForce *= WindZone.AirborneMultiplier;
+                windForce *= CustomWindZone.AirborneMultiplier;
             }
             
             horizontalMomentum += windForce * Time.deltaTime;
@@ -331,8 +387,8 @@ public class PlayerController : MonoBehaviour
         }
 
         /* Jump Buffer Management: remembers jump button press shortly before landing */
-        /* Jump input: Keyboard Space OR Controller A button */
-        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
+        /* Jump input: Keyboard Space OR Controller A button OR Mobile UI */
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0) || MobileInput.ConsumeJump())
         {
             jumpBufferCounter = jumpBufferTime;
         }
@@ -354,10 +410,10 @@ public class PlayerController : MonoBehaviour
             jumpBufferCounter = 0f;
             coyoteTimeCounter = 0f;
             
-            /* Trigger jump animation */
+            /* Trigger jump animation - using hash for performance */
             if (animator != null)
             {
-                animator.SetTrigger("Jump");
+                animator.SetTrigger(JumpHash);
             }
             
             /* Stretch on jump: thin XZ, grow Y */
@@ -380,17 +436,17 @@ public class PlayerController : MonoBehaviour
         /* Smooth the turn direction for better animation blending */
         smoothTurnDirection = Mathf.Lerp(smoothTurnDirection, targetTurnDirection, Time.deltaTime * 5f);
         
-        /* Set animator parameters */
-        animator.SetFloat("Speed", speed);
-        animator.SetFloat("TurnDirection", smoothTurnDirection);
+        /* Set animator parameters - using hash IDs for performance */
+        animator.SetFloat(SpeedHash, speed);
+        animator.SetFloat(TurnDirectionHash, smoothTurnDirection);
         
-        animator.SetBool("IsGrounded", isGrounded);
+        animator.SetBool(IsGroundedHash, isGrounded);
         
         /* IsRunning based on INPUT, not actual speed - this prevents animation lag after landing */
         float inputMag = new Vector3(Input.GetAxisRaw("Horizontal"), 0, Input.GetAxisRaw("Vertical")).magnitude;
         bool isRunning = isSprinting && inputMag > 0.1f;
         
-        animator.SetBool("IsRunning", isRunning);
+        animator.SetBool(IsRunningHash, isRunning);
         
         /* Sync animation speed with movement speed to prevent foot sliding */
         /* Walk animation base speed: 12, Run animation base speed: 20 */
@@ -412,7 +468,7 @@ public class PlayerController : MonoBehaviour
             idleTimer += Time.deltaTime;
             if (idleTimer > 8f) /* 8 saniye sonra ikinci idle */
             {
-                animator.SetTrigger("PlayIdle2");
+                animator.SetTrigger(PlayIdle2Hash);
                 idleTimer = 0f;
             }
         }
@@ -475,15 +531,29 @@ public class PlayerController : MonoBehaviour
     {
         if (visualGroup == null) return;
 
-        /* Side Lean: based on turn direction (smoothTurnDirection) */
-        float targetSideLean = -smoothTurnDirection * sideLeanStrength;
-
-        /* Forward Lean: based on sprinting state and speed */
         float speedPercent = horizontalMomentum.magnitude / sprintSpeed;
-        float targetForwardLean = (isSprinting && speedPercent > 0.5f) ? forwardLeanStrength : 0f;
+        float speedFactor = Mathf.Clamp01(speedPercent);
+        
+        /* === STRAY-STYLE BODY CURVE === */
+        
+        /* 1. Side Lean (Z rotation): tilt body into the turn */
+        float dynamicSideLean = sideLeanStrength * (1f + speedFactor * 0.5f);
+        float targetSideLean = -smoothTurnDirection * dynamicSideLean;
+        
+        /* 2. Body Yaw (Y rotation): rotate body toward the turn direction */
+        /* THIS is what creates the "curving/snaking" look like in Stray */
+        float dynamicYaw = bodyYawStrength * (0.5f + speedFactor * 0.5f);
+        float targetBodyYaw = -smoothTurnDirection * dynamicYaw;
+        
+        /* 3. Forward Lean (X rotation): lean forward when running fast */
+        float targetForwardLean = 0f;
+        if (speedFactor > 0.3f)
+        {
+            targetForwardLean = forwardLeanStrength * speedFactor;
+        }
 
-        /* Apply rotations smoothly */
-        Quaternion targetLeanRotation = Quaternion.Euler(targetForwardLean, 0f, targetSideLean);
+        /* Apply all three rotations smoothly */
+        Quaternion targetLeanRotation = Quaternion.Euler(targetForwardLean, targetBodyYaw, targetSideLean);
         visualGroup.localRotation = Quaternion.Lerp(
             visualGroup.localRotation, 
             targetLeanRotation, 
