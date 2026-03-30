@@ -12150,14 +12150,24 @@ MonoBehaviour:
   dialogueBackground: {fileID: 0}
   dialogueText: {fileID: 0}
   customFont: {fileID: 11400000, guid: 8fcb39bf50fe5c042901441d4987dad4, type: 2}
-  normalExpression: {fileID: 0}
+  customBackgroundSprite: {fileID: 21300000, guid: 10c60282fbce3324d80d9c5fe84c7378, type: 3}
+  backgroundSize: {x: 1000, y: 2584.5}
+  backgroundOffset: {x: 3.57, y: 551.44}
+  backgroundOpacity: 1
+  textSize: {x: 664.9, y: 250}
+  textOffset: {x: -180, y: 130}
+  portraitSize: {x: 954.2, y: 2660}
+  portraitPosition: {x: -10.07, y: 537.6}
+  updateLayoutInRealtime: 1
+  normalExpression: {fileID: 21300000, guid: efea1ff0f905de543b73251c40a89b67, type: 3}
+  talkingExpression: {fileID: 21300000, guid: af2a0bc1efa9a4e4d8abb7ae7b4ea152, type: 3}
   worriedExpression: {fileID: 0}
   scaredExpression: {fileID: 0}
   typeSpeed: 0.03
-  displayDuration: 3
-  fadeSpeed: 2
-  normalBgColor: {r: 0.2, g: 0.3, b: 0.5, a: 0.9}
-  worriedBgColor: {r: 0.5, g: 0.3, b: 0.2, a: 0.9}
+  displayDuration: 35
+  fadeSpeed: 3
+  normalBgColor: {r: 0.05, g: 0.05, b: 0.08, a: 0.9}
+  worriedBgColor: {r: 0.15, g: 0.02, b: 0.02, a: 0.9}
 --- !u!4 &1296457211
 Transform:
   m_ObjectHideFlags: 0
